@@ -1,29 +1,29 @@
 package currency
 
 import (
-	"go-sqlmock-example/services/database"
+	"database/sql"
 	"time"
 )
 
 type Repository interface {
-	Query(timeFrom time.Time) (database.RowsIterator, error)
-	Parse(rows database.RowScanner) (Currency, error)
+	Query(timeFrom time.Time) (*sql.Rows, error)
+	Parse(rows *sql.Rows) (Currency, error) // Reverted to accept *sql.Rows
 }
 
 type CurrencyRepository struct {
-	db database.DB
+	db *sql.DB
 }
 
-func NewCurrencyRepository(db database.DB) *CurrencyRepository {
+func NewCurrencyRepository(db *sql.DB) *CurrencyRepository {
 	return &CurrencyRepository{db: db}
 }
 
-func (r *CurrencyRepository) Query(timeFrom time.Time) (database.RowsIterator, error) {
+func (r *CurrencyRepository) Query(timeFrom time.Time) (*sql.Rows, error) {
 	query := "SELECT type, chain, iso, created_at FROM currencies WHERE created_at > ?"
 	return r.db.Query(query, timeFrom)
 }
 
-func (r *CurrencyRepository) Parse(rows database.RowScanner) (Currency, error) {
+func (r *CurrencyRepository) Parse(rows *sql.Rows) (Currency, error) {
 	var currency Currency
 	err := rows.Scan(&currency.Type, &currency.Chain, &currency.ISO, &currency.CreatedAt)
 	if err != nil {

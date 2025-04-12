@@ -1,34 +1,16 @@
 package processor
 
 import (
+	"database/sql"
 	"errors"
 	"go-sqlmock-example/services/currency"
-	"go-sqlmock-example/services/database"
-	"go-sqlmock-example/services/mocks"
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
-
-// MockRepository implements currency.Repository for testing
-type MockRepository struct {
-	mock.Mock
-}
-
-func (m *MockRepository) Query(timeFrom time.Time) (database.RowsIterator, error) {
-	args := m.Called(timeFrom)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(database.RowsIterator), args.Error(1)
-}
-
-func (m *MockRepository) Parse(rows database.RowScanner) (currency.Currency, error) {
-	args := m.Called(rows)
-	return args.Get(0).(currency.Currency), args.Error(1)
-}
 
 // MockProducer implements currency.Producer for testing
 type MockProducer struct {
@@ -42,139 +24,139 @@ func (m *MockProducer) Produce(currency currency.Currency) error {
 
 func TestProcessor_Process_Success(t *testing.T) {
 	// Setup
-	mockRepo := new(MockRepository)
-	mockProducer := new(MockProducer)
-	mockRows := mocks.NewMockRows([]bool{true, false}) // One row followed by end
-	currencyObj := currency.Currency{Type: "fiat", ISO: "USD"}
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer db.Close()
 
-	mockRepo.On("Query", mock.Anything).Return(mockRows, nil)
-	mockRows.On("Close").Return(nil)
-	mockRepo.On("Parse", mockRows).Return(currencyObj, nil)
-	mockProducer.On("Produce", currencyObj).Return(nil)
+	createdAt := time.Date(2025, time.April, 12, 23, 40, 31, 0, time.UTC)
+	mockRows := sqlmock.NewRows([]string{"type", "chain", "iso", "created_at"}).
+		AddRow("fiat", "ethereum", "USD", createdAt)
+
+	mock.ExpectQuery("SELECT type, chain, iso, created_at FROM currencies WHERE created_at > ?").
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(mockRows)
+
+	mockProducer := new(MockProducer)
+	mockProducer.On("Produce", currency.Currency{
+		Type: "fiat", ISO: "USD", Chain: sql.NullString{String: "ethereum", Valid: true}, CreatedAt: createdAt,
+	}).Return(nil)
+
+	repo := currency.NewCurrencyRepository(db)
+	processor := New(repo, mockProducer)
 
 	// Execute
-	processor := New(mockRepo, mockProducer)
-	err := processor.Process(time.Now())
+	err = processor.Process(time.Now())
 
 	// Verify
 	assert.NoError(t, err)
-	mockRepo.AssertExpectations(t)
+	assert.NoError(t, mock.ExpectationsWereMet())
 	mockProducer.AssertExpectations(t)
-	mockRows.AssertExpectations(t)
 }
 
 func TestProcessor_Process_QueryError(t *testing.T) {
 	// Setup
-	mockRepo := new(MockRepository)
-	mockProducer := new(MockProducer)
-	mockError := errors.New("query error")
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer db.Close()
 
-	mockRepo.On("Query", mock.Anything).Return(nil, mockError)
+	mock.ExpectQuery("SELECT type, chain, iso, created_at FROM currencies WHERE created_at > ?").
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnError(errors.New("query error"))
+
+	mockProducer := new(MockProducer)
+
+	repo := currency.NewCurrencyRepository(db)
+	processor := New(repo, mockProducer)
 
 	// Execute
-	processor := New(mockRepo, mockProducer)
-	err := processor.Process(time.Now())
+	err = processor.Process(time.Now())
 
 	// Verify
 	assert.Error(t, err)
-	assert.Equal(t, mockError, err)
-	mockRepo.AssertExpectations(t)
+	assert.NoError(t, mock.ExpectationsWereMet())
 	mockProducer.AssertExpectations(t)
 }
 
 func TestProcessor_Process_ParseError(t *testing.T) {
 	// Setup
-	mockRepo := new(MockRepository)
-	mockProducer := new(MockProducer)
-	mockRows := mocks.NewMockRows([]bool{true})
-	mockError := errors.New("parse error")
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer db.Close()
 
-	mockRepo.On("Query", mock.Anything).Return(mockRows, nil)
-	mockRows.On("Close").Return(nil)
-	mockRepo.On("Parse", mockRows).Return(currency.Currency{}, mockError)
+	mockRows := sqlmock.NewRows([]string{"type", "chain", "iso", "created_at"}).
+		AddRow("invalid", nil, nil, nil)
+
+	mock.ExpectQuery("SELECT type, chain, iso, created_at FROM currencies WHERE created_at > ?").
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(mockRows)
+
+	mockProducer := new(MockProducer)
+
+	repo := currency.NewCurrencyRepository(db)
+	processor := New(repo, mockProducer)
 
 	// Execute
-	processor := New(mockRepo, mockProducer)
-	err := processor.Process(time.Now())
+	err = processor.Process(time.Now())
 
 	// Verify
 	assert.Error(t, err)
-	assert.Equal(t, mockError, err)
-	mockRepo.AssertExpectations(t)
+	assert.NoError(t, mock.ExpectationsWereMet())
 	mockProducer.AssertExpectations(t)
-	mockRows.AssertExpectations(t)
 }
 
 func TestProcessor_Process_ProduceError(t *testing.T) {
 	// Setup
-	mockRepo := new(MockRepository)
-	mockProducer := new(MockProducer)
-	mockRows := mocks.NewMockRows([]bool{true})
-	currencyObj := currency.Currency{Type: "fiat", ISO: "USD"}
-	mockError := errors.New("produce error")
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer db.Close()
 
-	mockRepo.On("Query", mock.Anything).Return(mockRows, nil)
-	mockRows.On("Close").Return(nil)
-	mockRepo.On("Parse", mockRows).Return(currencyObj, nil)
-	mockProducer.On("Produce", currencyObj).Return(mockError)
+	createdAt := time.Date(2025, time.April, 12, 23, 43, 46, 504277000, time.UTC)
+	mockRows := sqlmock.NewRows([]string{"type", "chain", "iso", "created_at"}).
+		AddRow("fiat", "ethereum", "USD", createdAt)
+
+	mock.ExpectQuery("SELECT type, chain, iso, created_at FROM currencies WHERE created_at > ?").
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(mockRows)
+
+	mockProducer := new(MockProducer)
+	mockProducer.On("Produce", currency.Currency{
+		Type: "fiat", ISO: "USD", Chain: sql.NullString{String: "ethereum", Valid: true}, CreatedAt: createdAt,
+	}).Return(errors.New("produce error"))
+
+	repo := currency.NewCurrencyRepository(db)
+	processor := New(repo, mockProducer)
 
 	// Execute
-	processor := New(mockRepo, mockProducer)
-	err := processor.Process(time.Now())
+	err = processor.Process(time.Now())
 
 	// Verify
 	assert.Error(t, err)
-	assert.Equal(t, mockError, err)
-	mockRepo.AssertExpectations(t)
+	assert.NoError(t, mock.ExpectationsWereMet())
 	mockProducer.AssertExpectations(t)
-	mockRows.AssertExpectations(t)
 }
 
 func TestProcessor_Process_NoRows(t *testing.T) {
 	// Setup
-	mockRepo := new(MockRepository)
-	mockProducer := new(MockProducer)
-	mockRows := mocks.NewMockRows([]bool{false}) // No rows
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer db.Close()
 
-	mockRepo.On("Query", mock.Anything).Return(mockRows, nil)
-	mockRows.On("Close").Return(nil)
+	mockRows := sqlmock.NewRows([]string{"type", "chain", "iso", "created_at"})
+
+	mock.ExpectQuery("SELECT type, chain, iso, created_at FROM currencies WHERE created_at > ?").
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(mockRows)
+
+	mockProducer := new(MockProducer)
+
+	repo := currency.NewCurrencyRepository(db)
+	processor := New(repo, mockProducer)
 
 	// Execute
-	processor := New(mockRepo, mockProducer)
-	err := processor.Process(time.Now())
+	err = processor.Process(time.Now())
 
 	// Verify
 	assert.NoError(t, err)
-	mockRepo.AssertExpectations(t)
+	assert.NoError(t, mock.ExpectationsWereMet())
 	mockProducer.AssertExpectations(t)
-	mockRows.AssertExpectations(t)
-}
-
-func TestProcessor_Process_MultipleRows(t *testing.T) {
-	// Setup
-	mockRepo := new(MockRepository)
-	mockProducer := new(MockProducer)
-	mockRows := mocks.NewMockRows([]bool{true, true, false}) // Two rows followed by end
-
-	currency1 := currency.Currency{Type: "fiat", ISO: "USD"}
-	currency2 := currency.Currency{Type: "crypto", ISO: "BTC"}
-
-	mockRepo.On("Query", mock.Anything).Return(mockRows, nil)
-	mockRows.On("Close").Return(nil)
-
-	mockRepo.On("Parse", mockRows).Return(currency1, nil).Once()
-	mockProducer.On("Produce", currency1).Return(nil).Once()
-
-	mockRepo.On("Parse", mockRows).Return(currency2, nil).Once()
-	mockProducer.On("Produce", currency2).Return(nil).Once()
-
-	// Execute
-	processor := New(mockRepo, mockProducer)
-	err := processor.Process(time.Now())
-
-	// Verify
-	assert.NoError(t, err)
-	mockRepo.AssertExpectations(t)
-	mockProducer.AssertExpectations(t)
-	mockRows.AssertExpectations(t)
 }

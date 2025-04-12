@@ -41,5 +41,5 @@ func (p *CurrencyProcessor) Process(timeFrom time.Time) error {
 		}
 	}
 
-	return nil
+	return rows.Err() // Check for errors encountered during iteration
 }
