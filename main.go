@@ -1,20 +1,25 @@
 package main
 
 import (
+	"database/sql"
 	"go-sqlmock-example/services/config"
 	"go-sqlmock-example/services/currency"
-	"go-sqlmock-example/services/database"
 	"go-sqlmock-example/services/processor"
 	"go-sqlmock-example/services/producer"
 	"log"
 	"time"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 func main() {
 	cfg := config.Load()
 
-	db := database.OpenDB(cfg)
-	defer database.CloseDB(db)
+	db, err := sql.Open("mysql", cfg.FormatDSN())
+	if err != nil {
+		log.Fatal("Failed to open DB connection:", err)
+	}
+	defer db.Close()
 
 	currencyRepository := currency.NewCurrencyRepository(db)
 

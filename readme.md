@@ -1,12 +1,12 @@
 # Go SQLMock Example
 
-This project demonstrates how to test database operations in Go using interfaces and mocks.
+This project demonstrates how to test database operations in Go using the `sqlmock` library. By directly using `database/sql` and `sqlmock`, we simplify the codebase while maintaining testability.
 
 ## Key Features
 
-- **Abstraction with Interfaces**: The `DB`, `RowsIterator`, and `RowScanner` interfaces abstract database operations, making the code testable and decoupled from `database/sql`.
-- **Mocking for Unit Tests**: Custom mocks are implemented to simulate database behavior, enabling comprehensive unit testing.
-- **Separation of Concerns**: The project follows a modular architecture, separating database logic, business logic, and testing concerns.
+- **Direct Use of `database/sql`**: The project uses `database/sql` without custom wrappers or abstractions.
+- **Mocking with `sqlmock`**: The `sqlmock` library is used to simulate database behavior, eliminating the need for a custom `mocks` package.
+- **Simplified Codebase**: By removing custom interfaces, wrappers, and mocks, the code is easier to understand and maintain.
 
 ## How to Run
 
@@ -26,9 +26,9 @@ This project demonstrates how to test database operations in Go using interfaces
 
 ## Key Objectives
 
-- Abstract database operations using interfaces.
-- Use mocks to test database interactions.
-- Explore the trade-offs of using custom abstractions for testing.
+- Simplify database operations by directly using `database/sql`.
+- Use `sqlmock` to test database interactions.
+- Maintain test coverage while reducing code complexity.
 
 ## Config
 
