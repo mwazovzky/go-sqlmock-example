@@ -1,0 +1,18 @@
+services:
+  mysql:
+    image: mysql:8
+    ports:
+      - 3306:3306
+    environment:
+      - MYSQL_TCP_PORT=3306
+      - MYSQL_DATABASE=example
+      - MYSQL_ROOT_PASSWORD=rootsecret
+      - MYSQL_USER=user
+      - MYSQL_PASSWORD=usersecret
+    volumes:
+      - ./mysql/conf.d:/etc/mysql/conf.d
+      - ./mysql/init:/docker-entrypoint-initdb.d
+      - "go_sqlmock_example:/var/lib/mysql"
+
+volumes:
+  go_sqlmock_example:
