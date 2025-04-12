@@ -1,19 +1,13 @@
 package main
 
 import (
-	"database/sql"
 	"go-sqlmock-example/services/config"
+	"go-sqlmock-example/services/currency"
 	"go-sqlmock-example/services/database"
+	"go-sqlmock-example/services/producer"
 	"log"
 	"time"
 )
-
-type Currency struct {
-	Type      string
-	ISO       string
-	Chain     sql.NullString
-	CreatedAt time.Time
-}
 
 func main() {
 	cfg := config.Load()
@@ -21,25 +15,40 @@ func main() {
 	db := database.OpenDB(cfg)
 	defer database.CloseDB(db)
 
+	cr := currency.NewCurrencyRepository(db)
+
+	p := producer.NewProducer()
+	cp := currency.NewCurrencyProducer(p)
+
 	timeFrom, err := time.Parse("2006-01-02 15:04:05", "2025-01-01 00:00:00")
 	if err != nil {
 		log.Fatal("Failed to parse time:", err)
 	}
 
-	query := "SELECT type, chain, iso, created_at FROM currencies WHERE created_at > ?"
-	rows, err := db.Query(query, timeFrom)
+	err = Run(timeFrom, cr, cp)
+	if err != nil {
+		log.Fatal("Failed to run:", err)
+	}
+}
+
+func Run(timeFrom time.Time, cr *currency.CurrencyRepository, cp *currency.CurrencyProducer) error {
+	rows, err := cr.Query(timeFrom)
 	if err != nil {
 		log.Fatal("Failed to execute query:", err)
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		var currency Currency
-
-		if err := rows.Scan(&currency.Type, &currency.Chain, &currency.ISO, &currency.CreatedAt); err != nil {
+		currency, err := cr.Parse(rows)
+		if err != nil {
 			log.Fatal("Failed to scan row:", err)
 		}
 
-		log.Printf("currency: %+v, ", currency)
+		cp.Produce(currency)
+		if err != nil {
+			log.Fatal("Failed to produce currency:", err)
+		}
 	}
+
+	return nil
 }
